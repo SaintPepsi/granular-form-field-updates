@@ -1,0 +1,1 @@
+[![pages-build-deployment](https://github.com/SaintPepsi/granular-form-field-updates/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/SaintPepsi/granular-form-field-updates/actions/workflows/pages/pages-build-deployment)
