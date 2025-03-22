@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Full Form</title>
+</head>
+<body>
+    <style>
+
+        * {
+            padding: 0;
+            margin:0;
+            box-sizing: border-box;
+        }
+
+        form {
+            border: 1px dashed darkcyan;
+        }
+
+        repeatentry {
+            border: 1px solid darkgreen;
+        }
+
+        repeatentry + repeatentry {
+            margin-top: 5px;
+        }
+
+        form, input, select, repeated, button, repeatentry, .fieldtracker, code {
+            display: block;
+            width: 100%;
+            padding:5px;
+        }
+
+        flex {
+            display: flex;
+            flex: 1 0 0;
+            width: 100%;
+            gap: 5px;
+            margin-top: 5px;
+            margin-bottom: 5px;
+        }
+
+        main {
+            display: grid;
+            gap: 20px;
+            grid-template-columns:1fr 1fr;
+            align-items: flex-start;
+        }
+
+        .fieldtracker {
+            transition: all 0.5s ease-out;
+            background-color: azure;
+        }
+
+        .flash {
+            transition: all 0s linear;
+            background-color: yellowgreen;
+        }
+
+        .fieldContent {
+            display: grid;
+            grid-template-columns: 1fr 3fr;
+        }
+
+        code {
+            white-space-collapse: break-spaces;
+        }
+    </style>
+    <main>
+
+        <div class="formHolder">
+
+        </div>
+
+        <div>
+            <h2>
+                Field Updates:
+            </h2>
+            <div class="fieldContent">
+
+            </div>
+        </div>
+
+        <div>
+            <h2>
+                Form Data:
+            </h2>
+            <code class="formValue"></div>
+        </div>
+
+    </main>
+
+    <script>
+
+
+        function main() {
+
+            /**
+             * @template {*} TValue
+             * @typedef {(value: TValue) => void} WritableSubscribeCallback
+             */
+            /**
+             * @template {*} TValue
+             * @typedef {(callback: WritableSubscribeCallback<TValue>) => void} WritableSubscribe
+             */
+
+            /**
+             * @template {*} TValue
+             * @typedef {(value: TValue) => void} WritableSet
+             */
+            /**
+             * @template {*} TValue
+             * @typedef {(callback: (TValue) => TValue) => void} WritableUpdate
+             */
+
+             /**
+              * @template {*} TValue
+              * @typedef {object} Writable
+              * @property {WritableSubscribe<TValue>} subscribe
+              * @property {TValue} value
+              * @property {WritableSet<TValue>} set
+              * @property {WritableUpdate<TValue>} update
+              */
+
+            /**
+             * @template {*} TValue
+             * @type {(initialValue: TValue) => Writable<TValue>}
+             */
+            const writable = (/** @type {TValue} */initialValue) => {
+                let value = initialValue || null;
+
+                /**
+                 * @const {Array<WritableSubscribeCallback<TValue>>}
+                 */
+                let subscribers = []
+
+                /**
+                 * @type {WritableSubscribe<TValue>}
+                 */
+                const subscribe = (callback) => {
+
+                    subscribers.push(callback);
+
+                    function unSubscribe() {
+                        const subIndex = subscribers.findIndex((sub) => sub === callback);
+                        subscribers.splice(subIndex, 1);
+                    }
+
+                    return unSubscribe;
+                }
+
+                /**
+                 * @type {WritableSet<TValue>}
+                 */
+                 const set = (newValue) =>{
+                    value = newValue;
+
+                    for (const sub of subscribers) {
+                        sub(value);
+                    }
+                }
+
+                /**
+                 * @type {WritableUpdate<TValue>}
+                 */
+                const update = (callback) =>{
+                    set(callback(value))
+                }
+
+                return {
+                    subscribe,
+                    get value() {
+                        return value;
+                    },
+                    set,
+                    update
+                }
+            }
+           
+
+            function getAllPaths(object, parentPath = '') {
+                return Object.entries(object).reduce((acc, current)=> {
+                    const [key, value] = current;
+                    const path = parentPath ? `${parentPath}.${key}` : key;
+                    switch (typeof value) {
+                        case "string":
+                        case "boolean":
+                        case "number":
+                        case "function":
+                        case "bigint":
+                        case "symbol":
+                        case "undefined":
+                            return [...acc, path];
+
+                        case "object":
+                            if (value === null) {
+                                return [...acc, path];
+                            }
+                            if (Array.isArray(value)) {
+                                return [...acc, ...value.flatMap((entry, index) => getAllPaths(entry, `${path}.${index}`))]
+                            }
+                            return [...acc, ...getAllPaths(value, path)]
+                        
+                        default:
+                            return acc
+                    }
+                }, []);
+            }
+
+            /**
+             * @param {object | Array<any>} obj
+             * @param {string} path
+             */
+             function _get(obj, path) {
+                const segments = path.split('.');
+                let currentEntry = obj;
+
+                for (let index = 0; index < segments.length; index++) {
+                    const pathEntry = segments[index];
+                    const entry = currentEntry[pathEntry];
+                    if (index === segments.length - 1) {
+                        return entry;
+                    }
+
+                    switch (typeof entry) {
+                        case "string":
+                        case "boolean":
+                        case "number":
+                        case "function":
+                        case "bigint":
+                        case "symbol":
+                        case "undefined":
+                            return undefined;
+
+                        case "object":
+                            currentEntry = entry;
+                            break;
+                    }
+                    
+                }
+            }
+
+            /**
+             * @param {object | Array<any>} obj
+             * @param {string} path
+             * @param {*} value
+             */
+             function _set(obj, path, value) {
+                const segments = path.split('.');
+                let currentEntry = obj;
+
+                for (let index = 0; index < segments.length; index++) {
+                    const pathEntry = segments[index];
+                    const entry = currentEntry?.[pathEntry];
+
+                    if (index === segments.length - 1) {
+                        currentEntry[pathEntry] = value;
+                        return
+                    }
+
+
+                    const nextSegment = segments[index + 1];
+                    const isNextSegentArrayEntry = !isNaN(Number(nextSegment)) 
+                    if (isNextSegentArrayEntry && !Array.isArray(entry)) {
+                        currentEntry[pathEntry] = []
+                        currentEntry = currentEntry[pathEntry]
+                        continue;
+                    }
+
+                    if (!isNextSegentArrayEntry && (typeof entry !== 'object' || entry === null)) {
+                        currentEntry[pathEntry] = {}
+                        currentEntry = currentEntry[pathEntry]
+                        continue;
+                    }
+
+
+                    currentEntry = entry;
+                    
+                }
+            }
+
+            /**
+             * @typedef {object} SelectProperty 
+             * @property {"select"} type
+             * @property {string} key
+             * @property {string[]} options 
+             */
+
+            /**
+             * @typedef {object} RepeatedProperty 
+             * @property {"repeated"} type
+             * @property {string} key
+             * @property {FormProperty[]} properties 
+             */
+
+            /**
+             * @typedef {object} TextProperty 
+             * @property {"text"} type
+             * @property {string} key
+             */
+
+            /**
+             * @typedef {SelectProperty | RepeatedProperty | TextProperty} FormProperty
+             */
+            
+            /**
+             * @type {FormProperty[]}
+             */
+            const formPropertiesDefinition = [
+                {
+                    type: "select",
+                    key: "style",
+                    options: ["left", "center", "right"]
+                },
+                {
+                    type: "repeated",
+                    key: "stats",
+                    properties: [
+                        {
+                            type: "text",
+                            key: "amount"
+                        },
+                        {
+                            type: "text",
+                            key: "name"
+                        },
+                        {
+                            type: "repeated",
+                            key: "people",
+                            properties: [
+                                {
+                                    type: "text",
+                                    key: "name"
+                                },
+                                {
+                                    type: "text",
+                                    key: "age"
+                                },
+                                
+                            ]
+                        }
+                        
+                    ]
+                }
+            ]
+
+
+            /**
+             * @typedef {object} CreatePropertyLabelParams
+             * @property {FormProperty} property
+             * @property {Element} parentElement
+             * @property {string} path
+             */
+            /**
+             * @type {(params: CreatePropertyLabelParams) => void}
+             */
+            const createPropertyLabel = ({ property, parentElement, path }) => {
+                const label = document.createElement('label');
+                label.setAttribute('for', path);
+                label.innerHTML = property.key;
+                parentElement.appendChild(label);
+            }
+
+            /**
+             * @typedef {Writable<Record<string, Writable<unknown>>>} WritableDictionary
+             */
+            /**
+             * @typedef {object} RenderPropertiesParams
+             * @property {FormProperty[]} properties
+             * @property {Element} parentElement
+             * @property {WritableDictionary} writableDictionary 
+             * @property {string} [parentPath]
+             */
+            /**
+             * @type {(params: RenderPropertiesParams)) => void}
+             */
+            const renderProperties = ({properties, parentElement, writableDictionary, parentPath = ''}) => {
+                return properties.reduce((currentPathEntries, property)=>{
+                    const path = parentPath ? `${parentPath}.${property.key}` : property.key;
+
+                    createPropertyLabel({
+                        property,
+                        parentElement,
+                        path
+                    });
+
+                    switch(property.type) {
+                        case "text": {
+                            const newInput = document.createElement("input");
+                            newInput.setAttribute('name', path);
+
+                            parentElement.appendChild(newInput);
+
+                            const fieldWritable = writable();
+
+                            writableDictionary.update((current) => {
+                                current[path] = fieldWritable;
+                                return current;
+                            });
+
+                            newInput.addEventListener('input', (e)=>{
+                                fieldWritable.set(e.target.value)
+                            })
+
+                            currentPathEntries.push([path, fieldWritable])
+
+                            return currentPathEntries
+                        }
+
+                        case "select": {
+                            const newSelect = document.createElement("select");
+                            newSelect.setAttribute('name', path);
+
+                            const newOption = document.createElement('option');
+                            newOption.setAttribute('value', null);
+                            newOption.innerHTML = 'No Selection';
+                            newSelect.appendChild(newOption);
+
+                            property.options.forEach((option) => {
+                                const newOption = document.createElement('option');
+                                newOption.setAttribute('value', option);
+                                newOption.innerHTML = option;
+                                newSelect.appendChild(newOption);
+                            })
+
+
+                            parentElement.appendChild(newSelect);
+                            
+                            const fieldWritable = writable();
+                            writableDictionary.update((current) => {
+                                current[path] = fieldWritable;
+                                return current;
+                            });
+
+                            newSelect.addEventListener('change', (e)=>{
+                                fieldWritable.set(e.target.value)
+                            })
+
+                            currentPathEntries.push([path, fieldWritable])
+
+                            return currentPathEntries
+                        }
+
+                        case "repeated": {
+                            const newWrapper = document.createElement('repeated');
+
+                            const addEntryButton = document.createElement('button');
+                            addEntryButton.setAttribute('type', "button")
+                            addEntryButton.innerHTML = `Add ${property.key} Entry`;
+
+                            const fieldWritable = writable();
+
+                            addEntryButton.addEventListener('click', ()=>{
+                                
+                                const repeatEntry = document.createElement("repeatentry");
+                                const index = newWrapper.querySelectorAll('repeatentry').length;
+
+                                if (index === 0) {
+                                    fieldWritable.set([])
+                                }
+
+                                newWrapper.appendChild(repeatEntry)
+
+                                const newPath = `${path}.${index}`;
+                                
+                                const pathEntries = renderProperties({
+                                    properties: property.properties,
+                                    parentElement: repeatEntry,
+                                    parentPath: newPath,
+                                    writableDictionary
+                                })
+
+                                pathEntries.forEach(([entryPath, entryWritable])=> {
+                                    console.log('entryPath,entryWritable', entryPath,entryWritable);
+                                })
+
+                                const moveEntryUpButton = document.createElement('button');
+                                moveEntryUpButton.setAttribute('type', "button")
+                                moveEntryUpButton.innerHTML = `Move ${property.key} "${index}" Entry Up`;
+
+                                const moveEntryDownButton = document.createElement('button');
+                                moveEntryDownButton.setAttribute('type', "button")
+                                moveEntryDownButton.innerHTML = `Move ${property.key} "${index}" Entry Down`;
+
+                                moveEntryUpButton.addEventListener('click', () => {
+                                    console.log('index', index);
+                                })
+
+                                moveEntryDownButton.addEventListener('click', () => {
+                                    console.log('index', index);
+                                })
+
+                                const flexEl = document.createElement('flex')
+
+                                flexEl.appendChild(moveEntryUpButton);
+                                flexEl.appendChild(moveEntryDownButton);
+
+                                repeatEntry.appendChild(flexEl);
+
+
+
+                            })
+
+                            parentElement.appendChild(newWrapper);
+                            parentElement.appendChild(addEntryButton);
+
+                            writableDictionary.update((current) => {
+                                current[path] = fieldWritable;
+                                return current;
+                            });
+                            currentPathEntries.push([path, fieldWritable])
+                            return currentPathEntries
+                        }
+                            
+                    }
+                },[]);
+            }
+
+            /**
+             * @typedef {object} FormProps
+             * @property {FormProperty[]} properties
+             * @property {Element} parentElement
+             */
+
+            /**
+             * @type {(formProps: FormProps) => void}
+             */
+            const createForm = ({
+                properties,
+                parentElement
+            }) => {
+
+
+                const form = document.createElement('form');
+                parentElement.appendChild(form);
+                const values = {};
+
+                function updateField(path, value) {
+
+                    _set(values, path, value);
+
+                    document.querySelector('.formValue').innerHTML = JSON.stringify(values, null, 2);
+
+                    function getFieldTracker() {
+                        const fieldTracker = document.querySelector(`.fieldtracker[path="${path}"]`);
+                        if (fieldTracker) return fieldTracker;
+
+                        const newFieldTracker = document.createElement('code');
+                        newFieldTracker.classList.add('fieldtracker')
+                        newFieldTracker.setAttribute('path', path);
+                        const fieldContent = document.querySelector('.fieldContent')
+                        const pathCode = document.createElement("code");
+                        pathCode.innerHTML = path;
+                        fieldContent.appendChild(pathCode);
+                        fieldContent.appendChild(newFieldTracker);
+
+                        return newFieldTracker
+
+                    }
+                    
+
+                    const fieldTracker = getFieldTracker();
+                    fieldTracker.innerHTML = JSON.stringify(value, null, 2);
+                    fieldTracker.classList.add('flash');
+                    requestAnimationFrame(()=> {
+                        fieldTracker.classList.remove('flash');
+                    })
+                }
+
+                /**
+                 * @type {WritableDictionary}
+                 */
+                const writableDictionary = writable({});
+
+                const subbedFields = []
+
+                writableDictionary.subscribe((dict)=>{
+                    subbedFields.forEach((unsub)=> unsub())
+                    Object.entries(dict).forEach(([path, writable])=>{
+                        const unsub = writable.subscribe((value)=> {
+                            updateField(path, value);
+                        });
+
+                        subbedFields.push(unsub);
+                    })
+                })
+
+                renderProperties({
+                    properties,
+                    parentElement: form,
+                    writableDictionary
+                })
+                
+            }
+
+
+            function handleCreateForm() {
+
+                const formHolder = document.querySelector('.formHolder');
+                if (!formHolder) return;
+                
+                createForm({
+                    parentElement: formHolder,
+                    properties: formPropertiesDefinition
+                });
+            }
+
+
+            handleCreateForm()
+
+        }
+
+
+        main();
+
+    </script>
+</body>
+</html>

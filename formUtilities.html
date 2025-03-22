@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Utilities</title>
+</head>
+<body>
+
+    <script>
+        function main() {
+
+            /**
+             * @template {*} TValue
+             * @typedef {(value: TValue) => void} WritableSubscribeCallback
+             */
+            /**
+             * @template {*} TValue
+             * @typedef {(callback: WritableSubscribeCallback<TValue>) => void} WritableSubscribe
+             */
+
+            /**
+             * @template {*} TValue
+             * @typedef {(value: TValue) => void} WritableSet
+             */
+            /**
+             * @template {*} TValue
+             * @typedef {(callback: (TValue) => TValue) => void} WritableUpdate
+             */
+
+            /**
+             * @template {*} TValue
+             * @typedef {object} Writable
+             * @property {WritableSubscribe<TValue>} subscribe
+             * @property {TValue} value
+             * @property {WritableSet<TValue>} set
+             * @property {WritableUpdate<TValue>} update
+             * @property {() => void} notify
+             */
+
+            /**
+             * @template {*} TValue
+             * @type {(initialValue: TValue) => Writable<TValue>}
+             */
+             const writable = (/** @type {TValue} */initialValue) => {
+                let value = initialValue || null;
+
+                /**
+                 * @const {Array<WritableSubscribeCallback<TValue>>}
+                 */
+                let subscribers = []
+
+                /**
+                 * @type {WritableSubscribe<TValue>}
+                 */
+                const subscribe = (callback) => {
+
+                    subscribers.push(callback);
+
+                    function unSubscribe() {
+                        const subIndex = subscribers.findIndex((sub) => sub === callback);
+                        subscribers.splice(subIndex, 1);
+                    }
+
+                    return unSubscribe;
+                }
+
+                const notify = () => {
+                    for (const sub of subscribers) {
+                        sub(value);
+                    }
+                }
+
+                /**
+                 * @type {WritableSet<TValue>}
+                 */
+                 const set = (newValue) =>{
+                    value = newValue;
+                    notify();
+                }
+
+                /**
+                 * @type {WritableUpdate<TValue>}
+                 */
+                const update = (callback) =>{
+                    set(callback(value))
+                }
+
+                
+
+                return {
+                    subscribe,
+                    get value() {
+                        return value;
+                    },
+                    set,
+                    update,
+                    notify
+                }
+            }
+
+            /**
+             * @param {object | Array<any>} obj
+             * @param {string} path
+             */
+             function _get(obj, path) {
+                const segments = path.split('.');
+                let currentEntry = obj;
+
+                for (let index = 0; index < segments.length; index++) {
+                    const pathEntry = segments[index];
+                    const entry = currentEntry?.[pathEntry];
+                    if (index === segments.length - 1) {
+                        return entry;
+                    }
+
+                    switch (typeof entry) {
+                        case "string":
+                        case "boolean":
+                        case "number":
+                        case "function":
+                        case "bigint":
+                        case "symbol":
+                        case "undefined":
+                            return undefined;
+
+                        case "object":
+                            currentEntry = entry;
+                            break;
+                    }
+                    
+                }
+            }
+
+            /**
+             * @param {object | Array<any>} obj
+             * @param {string} path
+             * @param {*} value
+             */
+             function _set(obj, path, value) {
+
+                const segments = path.split('.');
+                const createdPaths = []
+                let currentPath = [];
+                let currentEntry = obj;
+
+                for (let index = 0; index < segments.length; index++) {
+                    const pathEntry = segments[index];
+                    currentPath.push(pathEntry);
+
+                    const entry = currentEntry?.[pathEntry];
+
+                    if (index === segments.length - 1) {
+                        currentEntry[pathEntry] = value;
+                        createdPaths.push(currentPath.join('.'))
+                        continue;
+                    }
+
+
+                    const nextSegment = segments[index + 1];
+                    const isNextSegentArrayEntry = !isNaN(Number(nextSegment)) 
+                    if (isNextSegentArrayEntry && !Array.isArray(entry)) {
+                        currentEntry[pathEntry] = []
+                        currentEntry = currentEntry[pathEntry]
+                        createdPaths.push(currentPath.join('.'))
+
+                        continue;
+                    }
+
+                    if (!isNextSegentArrayEntry && (typeof entry !== 'object' || entry === null)) {
+                        currentEntry[pathEntry] = {}
+                        currentEntry = currentEntry[pathEntry];
+                        createdPaths.push(currentPath.join('.'))
+                        continue;
+                    }
+
+
+                    currentEntry = entry;
+                    
+                }
+                return createdPaths;
+            }
+            
+            function deepWritable(value) {
+                const mainWritable = writable(value);
+
+                const writablesDict = {}
+
+                function subscribe(path, callback) {
+                    
+                    writablesDict[path] ||= writable(_get(mainWritable.value, path));
+
+                    return writablesDict[path].subscribe(callback);
+                }
+
+                function alteredPathsReducer(currentKeys, alteredPath) {
+                    if (!currentKeys.includes(alteredPath)) {
+                            currentKeys.push(alteredPath)
+                        }
+
+                        const splitPath = alteredPath.split('.')
+                        const lastEntry = splitPath.pop()
+                        const isLastEntryNumber = !isNaN(Number(lastEntry));
+
+                        if (isLastEntryNumber) {
+                            const arrayalteredPath = splitPath.join('.')
+                            if (!currentKeys.includes(arrayalteredPath)) {
+                                currentKeys.push(arrayalteredPath)
+                            }
+                        }
+                        return currentKeys;
+                }
+                
+                function set(path, value) {
+                    const pathWritable = writablesDict[path];
+                    
+                    const intermediateState = mainWritable.value
+                    const createdPaths = _set(intermediateState, path, value);
+                    mainWritable.set(intermediateState);
+
+                    const pathsToUpdate = createdPaths.includes(path) ? createdPaths : [...createdPaths, path]
+                    pathsToUpdate.reduce(alteredPathsReducer,[]).forEach((updatePath)=>{
+                        const createPathWritable = writablesDict[updatePath];
+                        if (createPathWritable) {
+                            createPathWritable.set(_get(intermediateState, updatePath))
+                        }
+                        
+                    })
+                   
+                }
+
+
+                /**
+                 * Handy for arrays, swaps the values at each part
+                 */
+                function swap(fromPath, toPath) {
+
+                    const intermediateState = mainWritable.value 
+                    const fromValue = _get(intermediateState, fromPath);
+                    const toValue = _get(intermediateState, toPath);
+
+                    const createdPathsTo = _set(intermediateState, toPath, fromValue);
+                    const createdPathsFrom = _set(intermediateState, fromPath, toValue);
+
+                    const createdPaths = [...createdPathsTo, ...createdPathsFrom];
+
+                    const allKeysToUpdate = Object.keys(writablesDict).filter((writableDictKey)=>{
+                        return createdPaths.some((createdPath) =>writableDictKey.includes(createdPath))
+                    })
+
+                    mainWritable.set(intermediateState);
+
+                    allKeysToUpdate.reduce(alteredPathsReducer,[]).forEach((keyToUpdate)=>{
+                        writablesDict[keyToUpdate].set(_get(intermediateState, keyToUpdate))
+                    })
+                    
+                }
+
+                return {
+                    subscribe,
+                    set,
+                    swap
+                }
+            }
+
+
+            const { subscribe, set, swap} = deepWritable({ 
+                foo: "test",
+                bar: null
+            })
+
+            const fooSub = subscribe('foo', (val)=>{
+                console.log('foo', val);
+            })
+
+            const barSub = subscribe('bar', (val)=>{
+                console.log('bar array', val);
+            })
+
+            const bar1Sub = subscribe('bar.1', (val)=>{
+                console.log('bar.1', val);
+            })
+
+            const bar2nameSub = subscribe('bar.2.name', (val)=>{
+                console.log('bar.2.name', val);
+            })
+
+            const bar2Sub = subscribe('bar.2', (val)=>{
+                console.log('bar.2', val);
+            })
+
+            console.group('===== set("foo", "test1"); =====');
+            set("foo", "test1");
+            console.groupEnd();
+            
+            console.group('===== set("bar.0", "apple0"); =====');
+            set("bar.0", "apple0");
+            console.groupEnd();
+            
+            console.group('===== set("bar.1", "apple1"); =====');
+            set("bar.1", "apple1");
+            console.groupEnd();
+            
+            console.group('===== set("bar.2.name", "hank"); =====');
+            set("bar.2.name", "hank");
+            console.groupEnd();
+            
+            console.group('===== swap("bar.0", "bar.2"); =====');
+            swap("bar.0", "bar.2");
+            console.groupEnd();
+
+        }
+
+
+        main();
+    </script>
+    
+</body>
+</html>
